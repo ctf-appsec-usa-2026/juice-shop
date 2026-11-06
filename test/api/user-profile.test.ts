@@ -51,4 +51,22 @@ void describe('/profile', () => {
 
     assert.equal(res.status, 302)
   })
+
+  void it('renders a template expression in the username as text', async () => {
+    const update = await request(app)
+      .post('/profile')
+      .set(authHeader)
+      .field('username', '#{6*7}')
+      .redirects(0)
+
+    assert.equal(update.status, 302)
+
+    const res = await request(app)
+      .get('/profile')
+      .set(authHeader)
+
+    assert.equal(res.status, 200)
+    assert.ok(res.text.includes('>#{6*7}</p>'))
+    assert.ok(!res.text.includes('>42</p>'))
+  })
 })
