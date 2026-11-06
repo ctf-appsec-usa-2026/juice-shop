@@ -70,7 +70,28 @@ void describe('/profile/image/file', () => {
 })
 
 void describe('/profile/image/url', () => {
-  void it('POST profile image URL valid for image available online', async () => {
+  void it('rejects private and internal image URLs', async () => {
+    const { token } = await login(app, {
+      email: `jim@${config.get<string>('application.domain')}`,
+      password: 'ncc-1701'
+    })
+
+    for (const imageUrl of [
+      'http://127.0.0.1/solve/challenges/server-side?key=test',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://localhost:3000/',
+      'file:///etc/passwd'
+    ]) {
+      const res = await request(app)
+        .post('/profile/image/url')
+        .set('Cookie', `token=${token}`)
+        .field('imageUrl', imageUrl)
+        .redirects(0)
+      assert.equal(res.status, 400, imageUrl)
+    }
+  })
+
+  void it('POST profile image URL rejects a missing scheme', async () => {
     const { token } = await login(app, {
       email: `jim@${config.get<string>('application.domain')}`,
       password: 'ncc-1701'
@@ -82,10 +103,10 @@ void describe('/profile/image/url', () => {
       .field('imageUrl', 'cataas.com/cat')
       .redirects(0)
 
-    assert.equal(res.status, 302)
+    assert.equal(res.status, 400)
   })
 
-  void it('POST profile image URL redirects even for invalid image URL', async () => {
+  void it('POST profile image URL rejects an unresolvable host', async () => {
     const { token } = await login(app, {
       email: `jim@${config.get<string>('application.domain')}`,
       password: 'ncc-1701'
@@ -97,7 +118,7 @@ void describe('/profile/image/url', () => {
       .field('imageUrl', 'https://notanimage.here/100/100')
       .redirects(0)
 
-    assert.equal(res.status, 302)
+    assert.equal(res.status, 400)
   })
 
   void it('POST profile image URL forbidden for anonymous user', { skip: 'FIXME runs into "socket hang up"' }, async () => {
