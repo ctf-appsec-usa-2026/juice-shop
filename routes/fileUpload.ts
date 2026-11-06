@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-import os from 'node:os'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import path from 'node:path'
+import { Readable } from 'node:stream'
 import yaml from 'js-yaml'
 import libxml from 'libxmljs2'
 import unzipper from 'unzipper'
@@ -27,29 +27,21 @@ function ensureFileIsPassed ({ file }: Request, res: Response, next: NextFunctio
 function handleZipFileUpload ({ file }: Request, res: Response, next: NextFunction) {
   if (utils.endsWith(file?.originalname.toLowerCase(), '.zip')) {
     if (((file?.buffer) != null) && utils.isChallengeEnabled(challenges.fileWriteChallenge)) {
-      const buffer = file.buffer
-      const filename = file.originalname.toLowerCase()
-      const tempFile = path.join(os.tmpdir(), filename)
-      fs.open(tempFile, 'w', function (err, fd) {
-        if (err != null) { next(err) }
-        fs.write(fd, buffer, 0, buffer.length, null, function (err) {
-          if (err != null) { next(err) }
-          fs.close(fd, function () {
-            fs.createReadStream(tempFile)
-              .pipe(unzipper.Parse())
-              .on('entry', function (entry: any) {
-                const fileName = entry.path
-                const absolutePath = path.resolve('uploads/complaints/' + fileName)
-                challengeUtils.solveIf(challenges.fileWriteChallenge, () => { return absolutePath === path.resolve('ftp/legal.md') })
-                if (absolutePath.includes(path.resolve('.'))) {
-                  entry.pipe(fs.createWriteStream('uploads/complaints/' + fileName).on('error', function (err) { next(err) }))
-                } else {
-                  entry.autodrain()
-                }
-              }).on('error', function (err: unknown) { next(err) })
-          })
-        })
-      })
+      const uploadRoot = path.resolve('uploads/complaints')
+      Readable.from(file.buffer)
+        .pipe(unzipper.Parse())
+        .on('entry', function (entry: any) {
+          const fileName: string = entry.path
+          const destination = path.resolve(uploadRoot, fileName)
+          const relative = path.relative(uploadRoot, destination)
+          if (!relative || relative === '..' || relative.startsWith('..' + path.sep) ||
+              path.isAbsolute(relative) || fileName.includes('\\') || entry.type !== 'File') {
+            entry.autodrain()
+            return
+          }
+          fs.mkdirSync(path.dirname(destination), { recursive: true })
+          entry.pipe(fs.createWriteStream(destination).on('error', function (err) { next(err) }))
+        }).on('error', function (err: unknown) { next(err) })
     }
     res.status(204).end()
   } else {
